@@ -6,6 +6,7 @@ import numpy as np
 1
 123.583300 85.549500 1.265839 269.693400 161.781200  1
 '''
+
 imgs = cv2.imread("img_591.jpg")
 print(imgs.shape)
 centers = (269,161)
