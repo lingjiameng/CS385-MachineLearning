@@ -15,6 +15,8 @@ ImgAnnotation = "FDDB-fold-01-ellipseList.txt"
 ImgList = "FDDB-fold-01.txt"
 
 VisDir = "vis_data/vis_data"
+np_hog_set_dir = "data/hog/"
+np_img_set_dir = "data/img/"
 
 class Face(object):
     #存储单个脸的完整信息
@@ -239,10 +241,6 @@ class ImgInfo(object):
         self.draw_face_rectangle(img,padding)
 
 
-
-
-
-
 def show_all_face(img_info_lists):
     #测试用，画出所有的椭圆框并显示
     for img_info in img_info_lists:
@@ -271,10 +269,10 @@ class DataPreprocessing(object):
         
         self._read_img_info(annotation_path)
         self._get_all_face_data(vis=vis)
-
-        np.save("data/face_hogs{:0>2d}.npy".format(order),np.asarray(self.all_face_hogs))
-        np.save("data/face_labels{:0>2d}.npy".format(order), np.asarray(self.all_face_labels))
-        
+        np.save(np_hog_set_dir +
+                "face_hogs{:0>2d}.npy".format(order), np.asarray(self.all_face_hogs))
+        np.save(np_hog_set_dir +
+                "face_labels{:0>2d}.npy".format(order), np.asarray(self.all_face_labels))
         self.img_info_lists = []
         self.all_face_labels = []
         self.all_face_hogs = []
@@ -327,10 +325,53 @@ class DataPreprocessing(object):
             self.all_face_labels.extend(face_labels)
             self.all_face_hogs.extend(face_hogs)
     
+def img_to_np(start,end):
+    """
+    加载切割好后的给定图片数据集[start to end],包含start和end指定数据集
+    保存为np格式
+    Args:
+        start(int):数据集的开始序号
+        end(int):数据集的结束序号
+    
+    Returns：
+        img_data: 灰度图片数据np矩阵(n x height x width )
+        img_label: 灰度图片标签{-1,+1}(n x 1)
+    """
+    label_dict = {
+        "neg": -1,
+        "pos": 1
+    }
+
+    for order in range(start, end+1, 1):
+        img_dir = "./vis_data/vis_data{:0>2d}/".format(order)
+        assert os.path.exists(img_dir), "[error: no path "+img_dir+" !]"
+
+        print("formating: ", img_dir)
+        img_data = []
+        img_label = []
+
+        img_names = os.listdir(img_dir)
+        for names in img_names:
+            if names[-7:-4] in label_dict.keys():
+                #获取图片完整路径
+                img_path = os.path.join(img_dir, names)
+
+                #获取标签和图像
+                label = label_dict[names[-7:-4]]
+                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                #加入数据集
+                img_data.append(img)
+                img_label.append(label)
+
+        img_data = np.asarray(img_data)
+        img_label = np.asarray(img_label)
+        np.save(np_img_set_dir+"face_imgs{:0>2d}.npy".format(order),img_data)
+        np.save(np_img_set_dir +
+                "face_labels{:0>2d}.npy".format(order), img_label)
 
 
 if __name__ == "__main__":
-    my_data = DataPreprocessing()
-    for i in range(1,11,1):
-        my_data.data_format(i, vis=True)
-
+    # my_data = DataPreprocessing()
+    # for i in range(1,11,1):
+    #     my_data.data_format(i, vis=True)
+    img_to_np(1,10)
