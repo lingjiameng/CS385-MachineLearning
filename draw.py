@@ -1,7 +1,13 @@
+import time
+import argparse
+
 import numpy as np
+import torch
+import torch.nn as nn
 import torch.utils.data
 import matplotlib.pyplot as plt
 import sklearn.svm
+from sklearn.metrics import classification_report
 
 import dataloader as dl
 import mymodel
@@ -42,7 +48,7 @@ def draw_logistic():
     LR = 0.002
     epoch = 50
 
-    mycls = mymodel.LogisticClassifier(900, LR)
+    mycls = mymodel.LogisticClassifier(900, LR,loss="SGLD")
 
     # list of epoch loss and accuracy
     e_loss_list = []
@@ -62,7 +68,7 @@ def draw_logistic():
             X = np.asarray(data[:, :900])
             Y = np.asarray(data[:, 900:])
 
-            loss, acc = mycls.learn(X, Y)
+            loss, acc = mycls.fit(X, Y)
 
             e_loss += loss
             e_acc += acc
@@ -254,8 +260,10 @@ def draw_svm():
     train_data, train_label = dl.load_train_norm()
     print("[train data shape: {}]".format(train_data.shape))
 
-    mysvm = sklearn.svm.SVC(verbose=True, gamma="auto")
-    mysvm.fit(train_data, np.squeeze(train_label))
+    ####### 节省时间，直接load训练结果
+    # mysvm = sklearn.svm.SVC(verbose=True, gamma="auto")
+    # mysvm.fit(train_data, np.squeeze(train_label))
+    mysvm = mymodel.load_model("save/svm.model")
 
     # test data
     test_data, test_label = dl.load_test_norm()
@@ -268,33 +276,351 @@ def draw_svm():
     print("[correct rate:{:.5f}][test size:{}][error size:{}]".format(
         1 - error/len(test_label), len(test_label), error))
 
-    ############# 用LDA展示支持向量
+    support_vector = mysvm.support_vectors_
+    sv_label = train_label[mysvm.support_, 0]
+
+    ################ 用LDA展示支持向量
     print(len(mysvm.support_))
     mylda = mymodel.LDA()
-    mylda.learn(train_data, train_label)
-    support_vector = mysvm.support_vectors_
+    mylda.fit(train_data, train_label)
+   
 
     z = np.matmul(train_data, mylda.w)
     sv = np.matmul(support_vector, mylda.w)
-    sv_label = train_label[mysvm.support_, 0]
+    
 
+    plt.subplot("122")
     plt.hist(z[train_label == 1], bins=200, alpha=0.35, label="positive data")
     plt.hist(sv[sv_label == 1], bins=200,
              alpha=0.35, label="support vector(+1)")
     plt.legend()
-    plt.show()
+    # plt.show()
 
+    plt.subplot("121")
     plt.hist(z[train_label == -1], bins=200, alpha=0.35, label="negative data")
 
     plt.hist(sv[sv_label == -1], bins=200,
              alpha=0.35, label="support vector(-1)")
     plt.legend()
     plt.show()
+
+    ###########################################3
+    plt.hist(z[train_label == 1], bins=200, alpha=0.35, label="positive data")
+    plt.hist(z[train_label == -1], bins=200, alpha=0.35, label="negative data")
+    plt.hist(sv, bins=200,
+             alpha=0.35, label="support vector")
+    plt.legend(fontsize = 20)
+    plt.show()
     #########################
 
+    # ###用PCA降维展示数据
+    # tofix 效果很差
+    # print(support_vector.shape)
+    # myLinearPCA = mymodel.LinearPCA(n_components=2)
+
+    # myLinearPCA.fit(train_data)
+    # x_proj = myLinearPCA.transform(train_data)
+    # sv = myLinearPCA.transform(support_vector)
+
+    # #投影后的结果聚类显示
+    # x_label = np.squeeze(train_label)
+
+    # plt.figure(1)
+    # plt.scatter(x_proj[x_label == 1, 0],
+    #             x_proj[x_label == 1, 1], alpha=0.4, s=4)
+    # plt.scatter(x_proj[x_label == -1, 0],
+    #             x_proj[x_label == -1, 1], alpha=0.4, s=4)
+    # plt.scatter(sv[:,0],sv[:,1], alpha=1, s=4)
+    # plt.show()
+
+
+
+def draw_cnn():
+    EPOCH = 50
+    BATCH_SIZE = 64
+    LR = 0.001              # learning rate
+
+    train_set = dl.FaceVisionSet(train=True)
+    test_set = dl.FaceVisionSet(train=False)
+    print(train_set)
+    print(test_set)
+
+    train_loader = torch.utils.data.DataLoader(train_set,batch_size=BATCH_SIZE,shuffle=True)
+    test_loader = torch.utils.data.DataLoader(test_set,batch_size=BATCH_SIZE,shuffle=True)
+
+    mycnn = mymodel.CNN()
+    print(mycnn)  
+    opt = torch.optim.Adam(params=mycnn.parameters(),lr=LR)
+    loss_func = nn.CrossEntropyLoss()
+
+    e_loss = 0.0
+    e_acc = 0.0
+    # list of epoch loss and accuracy
+    e_loss_list = []
+    e_acc_list = []
+
+    # list of batch accuray
+    b_loss_list = []
+    b_acc_list = []
+    for epoch in range(EPOCH):
+        cpu_time = time.process_time()
+        wall_time = time.time()
+        for step,(b_x,b_y) in enumerate(train_loader):
+            output = mycnn(b_x)[0]
+            loss = loss_func(output,b_y)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+
+            e_loss += loss.data.numpy()
+            pred_y = torch.max(output, 1)[1].data.numpy()
+
+            acc = (pred_y == b_y.data.numpy()).astype(int).sum()
+            e_acc += acc
+            if step%50 == 0:
+                print("*",end="",flush=True)
+
+            if 0 == epoch:
+                b_loss_list.append(loss/len(pred_y))
+                b_acc_list.append(acc/len(pred_y))
+
+        if 0 == epoch:
+            ## 画出一个epoch的loss和acc的变化曲线
+            plt.subplot("121")
+            plt.plot(b_loss_list)
+            plt.xlabel('batches(batch_size=64)')
+            plt.ylabel('average loss')
+            plt.title("loss")
+
+            plt.subplot("122")
+            plt.plot(b_acc_list, color="coral")
+            plt.xlabel('batches(batch_size=64)')
+            plt.ylabel('average accuracy')
+            plt.title("accuracy")
+
+            plt.suptitle("loss and accuracy of first epoch")
+            plt.show()
+
+        print(flush=True)
+        e_loss = e_loss/ len(train_set)
+        e_acc = e_acc / len(train_set)
+        e_loss_list.append(e_loss)
+        e_acc_list.append(e_acc)
+        e_cpu_time = time.process_time() - cpu_time
+        e_wall_time = time.time() - wall_time
+        print("[epoch:{}][cpu time:{:.3f}][wall time:{:.3f}][loss:{:.5f}][acc:{:.5f}]".format(
+            epoch, e_cpu_time, e_wall_time, e_loss, e_acc))
+    
+    ## 画出整个training的loss和acc的变化曲线
+    plt.subplot("121")
+    plt.plot(e_loss_list)
+    plt.xlabel('epochs')
+    plt.ylabel('average loss')
+    plt.title("loss of 50 epochs")
+
+    plt.subplot("122")
+    plt.plot(e_acc_list, color="coral")
+    plt.xlabel('epochs')
+    plt.ylabel('average accuracy')
+    plt.title("accuracy of 50 epochs")
+    plt.show()
+
+
+
+    #################################################
+    # test 
+
+    cpu_time = time.process_time()
+    wall_time = time.time()
+    e_loss = 0.0
+    e_acc = 0.0
+    for step, (b_x, b_y) in enumerate(test_loader):
+        output = mycnn(b_x)[0]
+        loss = loss_func(output, b_y)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+
+        e_loss += loss.data.numpy()
+        pred_y = torch.max(output, 1)[1].data.numpy()
+
+        acc = (pred_y == b_y.data.numpy()).astype(int).sum()
+        e_acc += acc
+
+
+    e_loss = e_loss/ len(test_set)
+    e_acc = e_acc / len(test_set)
+    e_cpu_time = time.process_time() - cpu_time
+    e_wall_time = time.time() - wall_time
+    print("\n===========test result:=============")
+    print("[cpu time:{:.3f}][wall time:{:.3f}][loss:{:.5f}][acc:{:.5f}]".format(
+        e_cpu_time, e_wall_time, e_loss, e_acc))
+    print("=====================saving model=====================")
+    torch.save(mycnn, 'save/cnn.pkl')
+    print("saving model to save/cnn.pkl finished!")
+
+
+
+
+def analysis_pca():
+    def norm(arr):
+        mu = np.mean(arr, axis=0)
+        var = np.var(arr, axis=0)
+        print("norm", end=":")
+        printshape([arr, mu, var])
+        return (arr-mu)/var
+
+    def printshape(l):
+        for arr in l:
+            print("|shape{}|".format(arr.shape), end="")
+        print()
+    # load data
+    train_data, train_label = dl.load_train_norm()
+    test_data, test_label = dl.load_test_norm()
+
+    print(train_data.shape, train_label.shape)
+
+    x = norm(train_data)
+
+    #hyper parameters
+    n_feature = 900
+    n_components = 10
+
+    # target weights
+    w = np.zeros((n_feature, n_components))
+
+    ###渐进式求解 与 直接求解的验证
+
+    ## 直接求解
+    xk = np.copy(x)
+    for comp in range(n_component):
+        xTx = np.matmul(xk.T, xk)
+        eigva, eigve = np.linalg.eig(xTx)
+        if not comp:
+            x_score = np.matmul(x, eigve)
+            print(np.var(x_score, axis=0)[:10])
+        # break
+        w_comp = eigve[np.argmax(np.abs(eigva))]  # 选取最优解
+
+        w[:, comp] = w_comp  # 保存
+
+        w_comp = w_comp.reshape(-1, 1)
+        xw = np.matmul(x, w_comp)
+        print("score:", np.var(xw))
+        xk = xk - np.matmul(xw, w_comp.T)
+        # print(xk==x)
+        printshape([xTx, w_comp, xw, xk])
+
+    x_proj = np.matmul(x, w)
+    printshape([x_proj, train_label])
+    x_label = np.squeeze(train_label)
+
+    x_proj_var = np.var(x_proj, axis=0)
+
+    comp_list = [np.argmin(x_proj_var)]
+
+    for comp in comp_list:  # range(n_component):
+        plt.scatter(x_proj[x_label == 1, 0],
+                    x_proj[x_label == 1, comp], alpha=0.4, s=4)
+        plt.scatter(x_proj[x_label == -1, 0]+50,
+                    x_proj[x_label == -1, comp], alpha=0.4, s=4)
+        plt.show()
+    print("===========")
+    print(w)
+
+
+def draw_pca(hog="hog"):
+    """
+    hog = {"hog" , "img"}
+    """
+    # load data
+    if hog == "hog":
+        train_data, train_label = dl.load_test_norm()
+    elif hog == "img":
+        # load data
+        train_data, train_label = dl.load_test_norm_img()
+        train_data = train_data.reshape(len(train_data), -1)
+
+    print(train_data.shape, train_label.shape)
+
+    ##############
+    ## PCA
+    myLinearPCA = mymodel.LinearPCA(n_components=2)
+
+    x_proj = myLinearPCA.fit_transform(train_data)
+
+    #投影后的结果聚类显示
+    x_label = np.squeeze(train_label)
+
+    plt.figure(1)
+    plt.scatter(x_proj[x_label == 1, 0],
+                x_proj[x_label == 1, 1], alpha=0.4, s=4, label="positive data")
+    plt.scatter(x_proj[x_label == -1, 0],
+                x_proj[x_label == -1, 1], alpha=0.4, s=4, label="negative data")
+    plt.title("PCA projection of face "+hog+" set")
+    plt.legend()
+    plt.show()
+
+
+def draw_tsne(hog="hog"):
+    """
+    hog = {"hog" , "img"}
+    """
+    # load data
+    if hog == "hog":
+        train_data, train_label = dl.load_test_norm()
+    elif hog == "img":
+        # load data
+        train_data, train_label = dl.load_test_norm_img()
+        train_data = train_data.reshape(len(train_data), -1)
+    print(train_data.shape, train_label.shape)
+
+    ##############
+    ## PCA
+    # X_reduce = mymodel.LinearPCA(n_components=50).fit_transform(train_data)
+    X_reduce = train_data
+
+    ## t-SNE
+    import sklearn.manifold
+    X_embedded = sklearn.manifold.TSNE(
+        n_components=2, init="pca").fit_transform(X_reduce)
+
+    #投影后的结果聚类显示
+    x_proj = X_embedded
+    x_label = np.squeeze(train_label)
+
+    plt.figure(1)
+    plt.scatter(x_proj[x_label == 1, 0],
+                x_proj[x_label == 1, 1], alpha=0.4, s=4, label="positive data")
+    plt.scatter(x_proj[x_label == -1, 0],
+                x_proj[x_label == -1, 1], alpha=0.4, s=4, label="negative data")
+    plt.title("t-SNE projection of face "+hog+" set")
+    plt.legend()
+    plt.show()
+
+
+parser = argparse.ArgumentParser(
+    description='draw model with logistic lda svm cnn pca tsne')
+
+parser.add_argument("--model", default="", type=str,
+                    help="log lda svm and cnn pca tsne")
+parser.add_argument("--data", default="hog", type=str,
+                    help="hog img")
 
 if __name__ == "__main__":
-    # draw_logistic()
-    # print("+"*54)
-    # draw_lda()
-    draw_svm()
+    args = parser.parse_args()
+    models = ["lda", "log", "svm", "cnn","pca","tsne"]
+    assert args.model in models, "error! no such model!"
+
+    if args.model == "log":
+        draw_logistic()
+    elif args.model == "lda":
+        draw_lda()
+    elif args.model == "svm":
+        draw_svm()
+    elif args.model == "cnn":
+        train_cnn()
+    elif args.model == "pca":
+        draw_pca(hog=args.data)
+    elif args.model == "tsne":
+        draw_tsne(hog=args.data)

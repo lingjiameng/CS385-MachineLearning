@@ -3,6 +3,24 @@ import numpy as np
 #for CNN
 import torch 
 import torch.nn as nn
+import pickle  # pickle模块
+
+
+def save_model(model,filepath):
+    """
+    保存Model为文件filepath
+    """
+    with open(filepath, 'wb') as f:
+        pickle.dump(model, f)
+
+def load_model(filepath):
+    """
+    读取Model 为文件filepath
+    """
+    model = None
+    with open(filepath, 'rb') as f:
+        model = pickle.load(f)
+    return model
 
 
 class LogisticClassifier(object):
@@ -14,7 +32,7 @@ class LogisticClassifier(object):
         self.w = np.random.normal(loc=0.0, scale=0.01, size=n_feature)
         self.loss = loss
 
-    def learn(self,X,Y):    
+    def fit(self,X,Y):    
         """
         X shape: n*p
         Y shape: n*1 with{-1,+1}
@@ -49,7 +67,6 @@ class LogisticClassifier(object):
 
         return loss,acc
 
-
     def predict(self,X):
         _Y = 1/(1+np.exp(-np.matmul(X, self.w)))
         
@@ -58,6 +75,8 @@ class LogisticClassifier(object):
 
         _Y = _Y[:,np.newaxis]
         return _Y
+
+
 
 class LDA(object):
     def __init__(self,vis=False):
@@ -75,7 +94,7 @@ class LDA(object):
         exp = np.exp(-1.0/(2*cov)*(x-mu)**2)
         return scalar*exp
 
-    def learn(self,X,Y):
+    def fit(self,X,Y):
         """
         X shape: n*p
         Y shape: n*1 with{-1,+1}
@@ -168,13 +187,19 @@ class LDA(object):
 
         return z_norm
 
-
 class CNN(nn.Module):
-    def __init__(self):
-        super(CNN,self).__init__()
+    def __init__(self, channels=1):
+        super(CNN, self).__init__()
+        """
+        Args:
+            channels: 输入图片的channel数
+        """
+        self.channels = channels
+        # self.width = width
+
         self.conv = nn.Sequential(   #input shape(1,96,96)
             nn.Conv2d(
-                in_channels = 1, #input channel
+                in_channels = self.channels, #input channel
                 out_channels = 16, #output channel
                 kernel_size=5, # filter size
                 stride=1, # 
@@ -193,3 +218,65 @@ class CNN(nn.Module):
         output = self.out(x)
         return output , x
 
+    def predict(self,x):
+        x = self.conv(x)
+        x = x.view(x.size(0), -1)
+        output = self.out(x)
+        y_pred = torch.max(output, 1)[1].data.numpy()
+        #标签转为 -1,1
+        y_pred = y_pred*2-1
+        return y_pred
+
+
+
+class LinearPCA(object):
+    def __init__(self, n_components):
+        """
+        linearPCA
+        """
+        self.n_components = n_components
+        self.w = None
+        self._mu = None # 数据的均值方差
+        self._var = None  
+
+    def fit(self,X):
+        """
+        计算数据降维的矩阵
+        Args:
+            X: n*p
+        """
+        ### 数据标准化
+        X = self._norm(X)
+
+        ###计算特征值
+        xTx = np.matmul(X.T, X)
+        #求特征矩阵或SVD分解均可
+        eigva, eigve = np.linalg.eig(xTx)
+        # eigve, eigva,_ =  np.linalg.svd(xTx) #svd中U[:,index]为特征向量,U的列向量为特征向量
+
+        #取特征值最大的两个
+        indexs = np.argsort(np.abs(eigva))[::-1]
+        self.w = eigve[:, indexs[:self.n_components]]  # 900 * 2
+
+    def transform(self,X):
+        """
+        进行数据降维
+        Returns:
+            X_proj: n * n_components 
+        """
+        X = self._norm(X)
+        X_proj = np.matmul(X, self.w)
+
+        return X_proj
+    
+    def fit_transform(self,X):
+        self.fit(X)
+        return self.transform(X)
+
+    def _norm(self,arr):
+        """
+        标准化数据
+        """
+        self._mu = np.mean(arr, axis=0)
+        self._var = np.var(arr, axis=0)
+        return (arr-self._mu)/self._var

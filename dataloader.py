@@ -57,7 +57,7 @@ def load_img_set(start,end):
 
 def load_train_norm_img():
     """
-    加载标准的灰度图片数据集
+    加载标准的灰度图片训练数据集
     """
     train_data1, train_label1 = load_img_set(1, 4)
     train_data2, train_label2 = load_img_set(5, 8)
@@ -72,7 +72,7 @@ def load_train_norm_img():
 
 def load_test_norm_img():
     """
-    加载标准的灰度图片数据集标签
+    加载标准的灰度图片测试数据集
     """
     train_data1, train_label1 = load_img_set(10, 10)
     train_data2, train_label2 = load_img_set(9, 9)
@@ -88,9 +88,16 @@ def load_test_norm_img():
 class FaceVisionSet(object):
     """
     train = True, False 则加载测试集
+    TODO: color = "GRAY", "RGB" 设置图片读取方式
     """
-    def __init__(self,train = True):
+
+    def __init__(self, train = True , color = "GRAY"):
+        """
+        train = True, False 则加载测试集
+        TODO: color = "GRAY", "RGB" 设置图片读取方式
+        """
         self.train = train
+        self.color = color
         root = np_img_set_dir
         assert os.path.exists(root),"error: no such dir "+root
         
@@ -136,6 +143,12 @@ class FaceVisionSet(object):
 
     def __len__(self):
         return len(self.data)
+    def __str__(self):
+        trans = {
+            True: "train",
+            False: "test"
+        }
+        return "[{} set][data shape:{}],[label shape{}]".format(trans[self.train],self.data.shape,self.labels.shape)
 
 
 if __name__ =="__main__":

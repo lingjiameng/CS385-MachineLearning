@@ -1,4 +1,5 @@
 import time
+import argparse
 
 import numpy as np
 import torch
@@ -6,6 +7,7 @@ import torch.nn as nn
 import torch.utils.data
 import matplotlib.pyplot as plt
 import sklearn.svm
+from sklearn.metrics import classification_report
 
 import dataloader as dl
 import mymodel
@@ -27,7 +29,7 @@ def norm_curve(z):
     y = normpdf(mu,var,x)
     return x,y
 
-def train_logistic():
+def train_logistic(loss = "SGD"):
     # train_data, train_label = load_data_set(1,8)
     train_data, train_label = dl.load_train_norm()
     print("[train data shape: {}]".format(train_data.shape))
@@ -38,7 +40,7 @@ def train_logistic():
 
     LR = 0.002
     epoch = 50
-    mycls = mymodel.LogisticClassifier(900, LR)
+    mycls = mymodel.LogisticClassifier(900, LR,loss=loss)
 
     print("=====================training result=====================")
     for e in range(epoch):
@@ -48,7 +50,7 @@ def train_logistic():
             X = np.asarray(data[:, :900])  # X = np.ndarray((64,900))
             Y = np.asarray(data[:, 900:])  # Y = np.ndarray((64,1))
 
-            loss, acc = mycls.learn(X, Y)
+            loss, acc = mycls.fit(X, Y)
 
             e_loss += loss
             e_acc += acc
@@ -69,6 +71,10 @@ def train_logistic():
     print("=====================testing result=====================")
     print("[correct rate:{:.5f}][test size:{}][error size:{}]".format(
         1 - error/len(test_label), len(test_label), error))
+    
+    print("=====================saving model=====================")
+    mymodel.save_model(mycls,"save/log.model")
+    print("saving model to save/log.model finished!")
 
 def train_lda():
     ## get train data
@@ -76,7 +82,7 @@ def train_lda():
     test_data, test_label = dl.load_test_norm()
     mylda = mymodel.LDA(vis=True)
 
-    mylda.learn(train_data,train_label)
+    mylda.fit(train_data,train_label)
 
     z = mylda.predict(test_data)
 
@@ -84,15 +90,30 @@ def train_lda():
 
     print("[correct rate : {:.5f}][total size: {}][error size: {}]".format(
         1.0-error/len(z), len(z), error))
+    
+    print("=====================saving model=====================")
+    mymodel.save_model(mylda, "save/lda.model")
+    print("saving model to save/lda.model finished!")
 
-def train_svm():
+def train_svm(kernel = "rbf"):
     # train_data, train_label = load_data_set(1,8)
     train_data, train_label = dl.load_train_norm()
     print("[train data shape: {}]".format(train_data.shape))
 
-    mysvm = sklearn.svm.SVC(verbose=True,gamma="auto")
+    mysvm = sklearn.svm.SVC(verbose=True,gamma="auto",kernel=kernel)
     mysvm.fit(train_data,np.squeeze(train_label))
+    
+    print()
+    ######################
+    # train data
+    predict_label = mysvm.predict(train_data)
 
+    error = np.sum(np.squeeze(train_label) != predict_label)
+    print("=====================testing result=====================")
+    print("[correct rate:{:.5f}][train size:{}][error size:{}]".format(
+        1 - error/len(train_label), len(train_label), error))
+    
+    #############################
     # test data
     test_data, test_label = dl.load_test_norm()
 
@@ -103,6 +124,11 @@ def train_svm():
     print("=====================testing result=====================")
     print("[correct rate:{:.5f}][test size:{}][error size:{}]".format(
         1 - error/len(test_label), len(test_label), error))
+    print("=====================saving model=====================")
+    mymodel.save_model(mysvm, "save/svm.model")
+    print("saving model to save/svm.model finished!")
+
+
 
 def train_cnn():
     EPOCH = 10               
@@ -124,7 +150,7 @@ def train_cnn():
     e_acc = 0.0
 
     for epoch in range(EPOCH):
-        cpu_time = time.clock()
+        cpu_time = time.process_time()
         wall_time = time.time()
         for step,(b_x,b_y) in enumerate(train_loader):
             output = mycnn(b_x)[0]
@@ -143,7 +169,7 @@ def train_cnn():
         print(flush=True)
         e_loss = e_loss/ len(train_set)
         e_acc = e_acc / len(train_set)
-        e_cpu_time = time.clock() - cpu_time
+        e_cpu_time = time.process_time() - cpu_time
         e_wall_time = time.time() - wall_time
         print("[epoch:{}][cpu time:{:.3f}][wall time:{:.3f}][loss:{:.5f}][acc:{:.5f}]".format(
             epoch, e_cpu_time, e_wall_time, e_loss, e_acc))
@@ -151,7 +177,7 @@ def train_cnn():
 
     # test 
 
-    cpu_time = time.clock()
+    cpu_time = time.process_time()
     wall_time = time.time()
     e_loss = 0.0
     e_acc = 0.0
@@ -171,23 +197,43 @@ def train_cnn():
 
     e_loss = e_loss/ len(test_set)
     e_acc = e_acc / len(test_set)
-    e_cpu_time = time.clock() - cpu_time
+    e_cpu_time = time.process_time() - cpu_time
     e_wall_time = time.time() - wall_time
     print("\n===========test result:=============")
     print("[cpu time:{:.3f}][wall time:{:.3f}][loss:{:.5f}][acc:{:.5f}]".format(
         e_cpu_time, e_wall_time, e_loss, e_acc))
 
+
+    print("=====================saving model=====================")
+    torch.save(mycnn, 'save/cnn.pkl')
+    print("saving model to save/cnn.pkl finished!")
+
+
+
+parser = argparse.ArgumentParser(
+    description='train model with logistic lda svm and cnn')
+
+parser.add_argument("--model", default="", type=str,
+                    help="log lda svm and cnn")
+parser.add_argument("--loss", default="SGD", type=str,
+                    help="SGD, SGLD")
+parser.add_argument("--kernel", default="rbf", type=str,
+                    help="linear, poly, rbf, sigmoid")
+                   
+
 if __name__ == "__main__":
+    args = parser.parse_args()
+    models = ["lda", "log", "svm", "cnn"]
+    assert args.model in models, "error! empty model!"
 
-    # train_logistic()
-    # print("+"*50)
-
-    # train_lda()
-    # print("+"*50)
-
-    # train_svm()
-    train_cnn()
-
+    if args.model == "log":
+        train_logistic(args.loss)
+    elif args.model == "lda":
+        train_lda()
+    elif args.model == "svm":
+        train_svm(args.kernel)
+    elif args.model == "cnn":
+        train_cnn()
 
 
 
