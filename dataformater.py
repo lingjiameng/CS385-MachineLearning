@@ -8,15 +8,10 @@ import pandas as pd
 from skimage import feature as ft
 
 
-AnnotationFolder = "FDDB-folds"
-OriginalPicsFolder = "originalPics"
+AnnotationFolder = "FDDB-folds"  #数据集标注所在文件夹
+OriginalPicsFolder = "originalPics" #数据集图片所在文件夹
 
-ImgAnnotation = "FDDB-fold-01-ellipseList.txt"
-ImgList = "FDDB-fold-01.txt"
 
-VisDir = "vis_data/vis_data"
-np_hog_set_dir = "data/hog/"
-np_img_set_dir = "data/img/"
 
 class Face(object):
     #存储单个脸的完整信息
@@ -95,10 +90,10 @@ class ImgInfo(object):
     def add_face_info(self, face):
         self.face_list.append(face)
     
-    def save_face_img(self):
+    def save_face_img(self, vis_dir):
         # data/2002/08/11/big/img_591
-        prefix = VisDir + "-".join(self.origin_path.split("/"))
-        print(prefix)
+        prefix = vis_dir + "-".join(self.origin_path.split("/"))
+        print("saving to --> "+prefix)
         for i in range(len(self.face_imgs)):
             face_dir = ""
             if(self.face_labels[i]==-1):
@@ -114,17 +109,12 @@ class ImgInfo(object):
             cv2.imwrite(face_dir, self.face_imgs[i])
             cv2.imwrite(hog_dir, hog_img)
 
-    def save_expand_img(self,img):
+    def save_expand_img(self, img, vis_dir):
         # data/2002/08/11/big/img_591
-        prefix = VisDir + "-".join(self.origin_path.split("/"))
+        prefix = vis_dir + "-".join(self.origin_path.split("/"))
         img_dir = prefix+"-expand.jpg"
         cv2.imwrite(img_dir, img)
 
-    # def save_hog_img(self, img):
-    #     # data/2002/08/11/big/img_591
-    #     prefix = "vis_data/" + "-".join(self.path.split("/"))
-    #     img_dir = prefix+"-hog.jpg"
-    #     cv2.imwrite(img_dir, img)
     def auto_padding(self,img):
         padding = int(max(img.shape))
 
@@ -141,6 +131,7 @@ class ImgInfo(object):
     def get_all_face(self,img, padding = 0, resize=True):
         """
         cut out all face(positive and negtive) in the the picture with padding
+        提取出图片信息和hog等信息
         
         Args:
             img: cv2 BGR image already padding
@@ -217,7 +208,7 @@ class ImgInfo(object):
             padding: padding size around picture
 
         Returns:
-            on returns, only modify input image
+            no returns, only modify input image
         """
 
         #####画出脸的所有框
@@ -241,41 +232,73 @@ class ImgInfo(object):
         self.draw_face_rectangle(img,padding)
 
 
-def show_all_face(img_info_lists):
-    #测试用，画出所有的椭圆框并显示
-    for img_info in img_info_lists:
-        img = cv2.imread(img_info.path)
-        img_info.draw_face_ellipse(img)
-        img_info.draw_face_rectangle(img)
-        cv2.imshow(str(img_info.face_num), img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-
 class DataPreprocessing(object):
-    def __init__(self):
+    def __init__(self, VisDir="vis_data/"):
+        self.VisDir = VisDir
+        self.vis_dir = VisDir
         self.img_info_lists = []
         self.all_face_labels = []
         self.all_face_hogs = []
     
-    def data_format(self,order, vis = False):
-        # order is integer, the order of n-th data-set
-        global VisDir
-        VisDir = "vis_data/vis_data{:0>2d}/".format(order)
-        # print(VisDir)
-        # return
-        annotation_path = os.path.join(
-            AnnotationFolder, "FDDB-fold-{:0>2d}-ellipseList.txt".format(order))
-        
-        self._read_img_info(annotation_path)
-        self._get_all_face_data(vis=vis)
-        np.save(np_hog_set_dir +
-                "face_hogs{:0>2d}.npy".format(order), np.asarray(self.all_face_hogs))
-        np.save(np_hog_set_dir +
-                "face_labels{:0>2d}.npy".format(order), np.asarray(self.all_face_labels))
-        self.img_info_lists = []
-        self.all_face_labels = []
-        self.all_face_hogs = []
+    def get_face_hog(self, start, end, vis=True):
+        """
+        加载标记好后的给定图片数据集[start to end],包含start和end指定数据集
+        提取hog特征并保存为np格式
+
+        Args:
+            start(int):数据集的开始序号
+            end(int):数据集的结束序号
+            vis: 是否保存数据为图像格式
+        Returns：
+            img_data: 灰度图片数据np矩阵(n x height x width )
+            img_label: 灰度图片标签{-1,+1}(n x 1)
+        """
+        for i in range(start,end+1,1):
+            self._get_face_hog(i,vis=vis)
+ 
+    def get_face_img(self, start, end):
+        """
+        加载切割好后的给定图片数据集[start to end],包含start和end指定数据集
+        保存为np格式
+        Args:
+            start(int):数据集的开始序号
+            end(int):数据集的结束序号
+        Returns：
+            img_data: 灰度图片数据np矩阵(n x height x width )
+            img_label: 灰度图片标签{-1,+1}(n x 1)
+        """
+        label_dict = {
+            "neg": -1,
+            "pos": 1
+        }
+        print("图片数据整理开始")
+
+        for order in range(start, end+1, 1):
+            img_dir =os.path.join(self.VisDir,"vis_data{:0>2d}/".format(order))
+            assert os.path.exists(img_dir), "[error: no path "+img_dir+" !]"
+
+            print("formating: ", img_dir)
+            img_data = []
+            img_label = []
+
+            img_names = os.listdir(img_dir)
+            for names in img_names:
+                if names[-7:-4] in label_dict.keys():
+                    #获取图片完整路径
+                    img_path = os.path.join(img_dir, names)
+
+                    #获取标签和图像
+                    label = label_dict[names[-7:-4]]
+                    img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+                    #加入数据集
+                    img_data.append(img)
+                    img_label.append(label)
+
+            img_data = np.asarray(img_data)
+            img_label = np.asarray(img_label)
+            np.save(NpImgDir+"face_imgs{:0>2d}.npy".format(order), img_data)
+            np.save(NpImgDir +
+                    "face_labels{:0>2d}.npy".format(order), img_label)
 
     def _read_img_info(self, img_anno_path):
         #读取图片信息列表
@@ -303,6 +326,9 @@ class DataPreprocessing(object):
     def _get_all_face_data(self,vis=False):
         ############################
         # 图片样本提取
+        print("="*40)
+        print("图片信息读取以及hog特征数据提取开始")
+        print("="*40)
         for img_info in self.img_info_lists:
             print(img_info)
             # if(img_info.path != "originalPics/2002/07/25/big/img_1047.jpg"):
@@ -318,60 +344,51 @@ class DataPreprocessing(object):
             face_imgs, face_labels,face_hogs,face_hogs_img = img_info.get_all_face(img_padding, padding)
 
             if vis:
-                img_info.save_face_img()
+                img_info.save_face_img(self.vis_dir)
                 img_info.draw_all_face_box(img_padding,padding)
-                img_info.save_expand_img(img_padding)
+                img_info.save_expand_img(img_padding, self.vis_dir)
 
             self.all_face_labels.extend(face_labels)
             self.all_face_hogs.extend(face_hogs)
-    
-def img_to_np(start,end):
-    """
-    加载切割好后的给定图片数据集[start to end],包含start和end指定数据集
-    保存为np格式
-    Args:
-        start(int):数据集的开始序号
-        end(int):数据集的结束序号
-    
-    Returns：
-        img_data: 灰度图片数据np矩阵(n x height x width )
-        img_label: 灰度图片标签{-1,+1}(n x 1)
-    """
-    label_dict = {
-        "neg": -1,
-        "pos": 1
-    }
 
-    for order in range(start, end+1, 1):
-        img_dir = "./vis_data/vis_data{:0>2d}/".format(order)
-        assert os.path.exists(img_dir), "[error: no path "+img_dir+" !]"
+    def _get_face_hog(self, order, vis = False):
+        """
+        # order is integer, the order of n-th data-set
+        """
+        self.vis_dir = os.path.join(self.VisDir, "vis_data{:0>2d}/".format(order))
 
-        print("formating: ", img_dir)
-        img_data = []
-        img_label = []
+        if not os.path.exists(self.vis_dir):
+            print(self.vis_dir+ " not exists! created auto!",flush=True)
+            os.makedirs(self.vis_dir)
+        # return
+        annotation_path = os.path.join(
+            AnnotationFolder, "FDDB-fold-{:0>2d}-ellipseList.txt".format(order))
+        
+        self._read_img_info(annotation_path)
+        self._get_all_face_data(vis=vis)
+        np.save(NpHogDir +
+                "face_hogs{:0>2d}.npy".format(order), np.asarray(self.all_face_hogs))
+        np.save(NpHogDir +
+                "face_labels{:0>2d}.npy".format(order), np.asarray(self.all_face_labels))
+        self.img_info_lists = []
+        self.all_face_labels = []
+        self.all_face_hogs = []
 
-        img_names = os.listdir(img_dir)
-        for names in img_names:
-            if names[-7:-4] in label_dict.keys():
-                #获取图片完整路径
-                img_path = os.path.join(img_dir, names)
 
-                #获取标签和图像
-                label = label_dict[names[-7:-4]]
-                img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-                #加入数据集
-                img_data.append(img)
-                img_label.append(label)
 
-        img_data = np.asarray(img_data)
-        img_label = np.asarray(img_label)
-        np.save(np_img_set_dir+"face_imgs{:0>2d}.npy".format(order),img_data)
-        np.save(np_img_set_dir +
-                "face_labels{:0>2d}.npy".format(order), img_label)
 
+VisDir = "vis_data/"  # 存储所有数据的可视化结果
+NpHogDir = "data/hog/"  # 以numpy 数组的形式存储提取出的hog数据
+NpImgDir = "data/img/"  # 以numpy 数组的形式存储提取出的脸的图片数据
 
 if __name__ == "__main__":
-    # my_data = DataPreprocessing()
-    # for i in range(1,11,1):
-    #     my_data.data_format(i, vis=True)
-    img_to_np(1,10)
+
+    # 检查文件目录
+    assert os.path.exists(VisDir),"error! no VisDir: "+ VisDir
+    assert os.path.exists(NpHogDir), "error! no NpHogDir: "+NpHogDir
+    assert os.path.exists(NpImgDir), "error! no NpImgDir: "+NpImgDir
+
+    my_data = DataPreprocessing(VisDir=VisDir)
+    
+    my_data.get_face_hog(1,10)
+    my_data.get_face_img(1,10)
