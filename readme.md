@@ -1,4 +1,6 @@
-# CS385 MachineLearning Proj1
+# CS385 MachineLearning Project
+
+实现了Logistics，LDA，SVM，CNN 以及降维算法PCA，t-SNE
 
 ## 环境
 
