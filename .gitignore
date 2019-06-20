@@ -4,7 +4,6 @@ originalPics*
 vis_data
 data
 save
-report
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

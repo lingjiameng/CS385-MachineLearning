@@ -1,7 +1,3 @@
-# Project 1 Report
-
-516030910553 孟令佳
-
 ## Data preprocessing
 
 ### 原始数据和样本边框
