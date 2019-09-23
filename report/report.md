@@ -1,3 +1,5 @@
+> 若公式显示不正常，建议安装[此chrome插件](https://chrome.google.com/webstore/detail/mathjax-plugin-for-github/ioemnmodlmafdkllaclgeombjnmnbima)以渲染公式
+
 ## Data preprocessing
 
 ### 原始数据和样本边框
